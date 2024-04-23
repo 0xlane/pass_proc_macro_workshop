@@ -48,7 +48,7 @@ fn do_expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     Ok(ret)
 }
 
-fn get_fields_from_input(input: &DeriveInput) -> syn::Result<&Punctuated<Field, Comma>> {
+fn get_fields_from_input<'a>(input: &'a DeriveInput) -> syn::Result<&'a Punctuated<Field, Comma>> {
     if let syn::Data::Struct(
         DataStruct {
             fields: syn::Fields::Named(
@@ -63,98 +63,193 @@ fn get_fields_from_input(input: &DeriveInput) -> syn::Result<&Punctuated<Field, 
     }
 }
 
-fn generate_builder_field_defines(fields: &Punctuated<Field, Comma>) -> syn::Result<proc_macro2::TokenStream> {
-    let mut ret = Ok(());
-    let idents: Vec<_> = fields.iter().map(|f| &f.ident).collect();
-    let types: Vec<_> = fields.iter()
-        .map(|f| {
-            if let Some(tn) = get_direct_type_name(&f.ty) {
-                if tn == "Option" {
-                    return get_inner_type(&f.ty).unwrap().first().unwrap().to_owned();
-                } else if tn == "Vec" {
-                    match parse_user_specified_iden_for_vec(f) {
-                        Ok(user_ident) => {
-                            eprintln!("{:#?}", user_ident);
-                        },
-                        Err(e) => {ret = Err(e);}
-                    };
+fn generate_builder_field_defines(fields: &Punctuated<Field, Comma>) -> syn::Result<proc_macro2::TokenStream> {    
+    let mut stream = proc_macro2::TokenStream::new();
+
+    let field_names: Vec<_> = fields.iter()
+        .filter_map(|f| f.ident.clone())
+        .map(|ident| ident.to_string())
+        .collect();
+
+    for field in fields.iter() {
+        if let Some(ident) = &field.ident {
+            let mut ty = &field.ty;
+            if let Some(type_name) = get_direct_type_name(ty) {
+                if type_name == "Option" {
+                    ty = get_inner_type(ty).unwrap().first().unwrap().to_owned();
+                } else if type_name == "Vec" {
+                    if let Some(user_ident) = parse_user_specified_iden_for_vec(field)? {
+                        // let other_field_names: Vec<_> = field_names.iter().filter(|f| **f != ident.to_string()).collect();
+                        // if !other_field_names.contains(&&user_ident.to_string()) {
+                        if user_ident == *ident || (user_ident != *ident && !field_names.contains(&user_ident.to_string())) {
+                            stream.extend(quote! {
+                                #ident: #ty,
+                            });
+                            continue;
+                        }
+                    }
                 }
             }
-            &f.ty
-        }).collect();
+            
+            stream.extend(quote! {
+                #ident: std::option::Option<#ty>,
+            });
+        }
+    }
 
-    Ok(quote! {
-        #(#idents: std::option::Option<#types>),*
-    })
+    Ok(stream)
 }
 
 fn generate_builder_field_inits(fields: &Punctuated<Field, Comma>) -> syn::Result<proc_macro2::TokenStream> {
-    let idents: Vec<_> = fields.iter().map(|f| &f.ident).collect();
+    let mut stream = proc_macro2::TokenStream::new();
 
-    Ok(quote! {
-        #(#idents: std::option::Option::None),*
-    })
+    let field_names: Vec<_> = fields.iter()
+        .filter_map(|f| f.ident.clone())
+        .map(|ident| ident.to_string())
+        .collect();
+
+    for field in fields.iter() {
+        if let Some(ident) = &field.ident {
+            let ty = &field.ty;
+            if let Some(type_name) = get_direct_type_name(ty) {
+                if type_name == "Vec" {
+                    if let Some(user_ident) = parse_user_specified_iden_for_vec(field)? {
+                        // let other_field_names: Vec<_> = field_names.iter().filter(|f| **f != ident.to_string()).collect();
+                        // if !other_field_names.contains(&&user_ident.to_string()) {
+                        if user_ident == *ident || (user_ident != *ident && !field_names.contains(&user_ident.to_string())) {
+                            stream.extend(quote! {
+                                #ident: std::vec![],
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
+            
+            stream.extend(quote! {
+                #ident: std::option::Option::None,
+            });
+        }
+    }
+
+    Ok(stream)
 }
 
 fn generate_builder_setter_functions(fields: &Punctuated<Field, Comma>) -> syn::Result<proc_macro2::TokenStream> {
-    let idents: Vec<_> = fields.iter().map(|f| &f.ident).collect();
-    let types: Vec<_> = fields.iter()
-        .map(|f| {
-            if let Some(tn) = get_direct_type_name(&f.ty) {
-                if tn == "Option" {
-                    return get_inner_type(&f.ty).unwrap().first().unwrap().to_owned();
+    let mut stream = proc_macro2::TokenStream::new();
+
+    let field_names: Vec<_> = fields.iter()
+        .filter_map(|f| f.ident.clone())
+        .map(|ident| ident.to_string())
+        .collect();
+
+    for field in fields.iter() {
+        if let Some(ident) = &field.ident {
+            let mut ty = &field.ty;
+            if let Some(type_name) = get_direct_type_name(ty) {
+                if type_name == "Option" {
+                    ty = get_inner_type(ty).unwrap().first().unwrap().to_owned();
+                } else if type_name == "Vec" {
+                    if let Some(user_ident) = parse_user_specified_iden_for_vec(field)? {
+                        // let other_field_names: Vec<_> = field_names.iter().filter(|f| **f != ident.to_string()).collect();
+                        // if !other_field_names.contains(&&user_ident.to_string()) {
+                        let inner_ty = get_inner_type(ty).unwrap().first().unwrap().to_owned();
+                        if user_ident == *ident {
+                            stream.extend(quote! {
+                                pub fn #user_ident(&mut self, #user_ident: #inner_ty) -> &mut Self {
+                                    self.#ident.push(#user_ident);
+                                    self
+                                }
+                            });
+                        } else if !field_names.contains(&user_ident.to_string()) {
+                            stream.extend(quote! {
+                                pub fn #ident(&mut self, #ident: #ty) -> &mut Self {
+                                    self.#ident = #ident;
+                                    self
+                                }
+        
+                                pub fn #user_ident(&mut self, #user_ident: #inner_ty) -> &mut Self {
+                                    self.#ident.push(#user_ident);
+                                    self
+                                }
+                            });
+                        }
+                        continue;
+                    }
                 }
             }
-            &f.ty
-        }).collect();
+            stream.extend(quote! {
+                pub fn #ident(&mut self, #ident: #ty) -> &mut Self {
+                    self.#ident = std::option::Option::Some(#ident);
+                    self
+                }
+            });
+        }
+        
+    }
 
-    Ok(quote! {
-        #(
-            pub fn #idents(&mut self, #idents: #types) -> &mut Self {
-                self.#idents = std::option::Option::Some(#idents);
-                self
-            }
-        )*
-    })
+    Ok(stream)
 }
 
 fn generate_builder_build_function(fields: &Punctuated<Field, Comma>, original_ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
-    let option_fields: Vec<_> = fields.iter()
-        .filter(|f| {
-            if let Some(tn) = get_direct_type_name(&f.ty) {
-                tn == "Option"
-            } else {
-                true
-            }
-        }).collect();
-    let other_fields: Vec<_> = fields.iter()
-        .filter(|f| !option_fields.contains(f))
+    let mut check_stream = proc_macro2::TokenStream::new();
+    let mut init_stream = proc_macro2::TokenStream::new();
+
+    let field_names: Vec<_> = fields.iter()
+        .filter_map(|f| f.ident.clone())
+        .map(|ident| ident.to_string())
         .collect();
-    let option_idents: Vec<_> = option_fields.iter().map(|f| &f.ident).collect();
-    let other_idents: Vec<_> = other_fields.iter().map(|f| &f.ident).collect();
+
+    for field in fields.iter() {
+        if let Some(ident) = &field.ident {
+            let ty = &field.ty;
+            if let Some(type_name) = get_direct_type_name(ty) {
+                if type_name == "Option" {
+                    init_stream.extend(quote! {
+                        #ident: self.#ident.clone(),
+                    });
+                    continue;
+                } else if type_name == "Vec" {
+                    if let Some(user_ident) = parse_user_specified_iden_for_vec(field)? {
+                        // let other_field_names: Vec<_> = field_names.iter().filter(|f| **f != ident.to_string()).collect();
+                        // if !other_field_names.contains(&&user_ident.to_string()) {
+                        if user_ident == *ident || (user_ident != *ident && !field_names.contains(&user_ident.to_string())) {
+                            init_stream.extend(quote! {
+                                #ident: self.#ident.clone(),
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
+            check_stream.extend(quote! {
+                if self.#ident.is_none() {
+                    return std::result::Result::Err(
+                        format!("{} field missing", stringify!(#ident)).into()
+                    )
+                }
+            });
+            init_stream.extend(quote! {
+                #ident: self.#ident.clone().unwrap(),
+            });
+        }
+        
+    }
 
     Ok(quote! {
         pub fn build(&self) -> std::result::Result<#original_ident, std::boxed::Box<dyn std::error::Error>> {
-            #(
-                if self.#other_idents.is_none() {
-                    return std::result::Result::Err(
-                        format!("{} field missing", stringify!(#other_idents)).into()
-                    )
-                }
-            )*
+            #check_stream
 
             std::result::Result::Ok(
                 #original_ident {
-                    #(#other_idents: self.#other_idents.clone().unwrap(),)*
-
-                    #(#option_idents: self.#option_idents.clone(),)*
+                    #init_stream
                 }
             )
         }
     })
 }
 
-fn get_inner_type(ty: &Type) -> Option<Vec<&Type>> {
+fn get_inner_type<'a>(ty: &'a Type) -> Option<Vec<&'a Type>> {
     if let syn::Type::Path(
         syn::TypePath {
             path: syn::Path {
