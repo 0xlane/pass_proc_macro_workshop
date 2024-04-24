@@ -28,6 +28,8 @@
 //   - Relevant syntax tree type:
 //     https://docs.rs/syn/2.0/syn/struct.Attribute.html
 
+use std::vec;
+
 use derive_builder::Builder;
 
 #[derive(Builder)]
@@ -50,4 +52,6 @@ fn main() {
 
     assert_eq!(command.executable, "cargo");
     assert_eq!(command.args, vec!["build", "--release"]);
+    assert!(command.env.is_empty());
+    assert_eq!(command.current_dir, None);
 }
