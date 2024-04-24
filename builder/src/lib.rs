@@ -341,7 +341,7 @@ fn parse_user_specified_iden_for_vec(field: &Field) -> syn::Result<Option<Ident>
                     ret = Some(Ident::new(&s.value(), field.ident.clone().unwrap().span()));
                     Ok(())
                 } else {
-                    Err(meta.error("unsupported attribute param"))
+                    Err(syn::Error::new_spanned(&attr.meta, "expected `builder(each = \"...\")`"))
                 }
             })?;
             return Ok(ret);
