@@ -28,11 +28,10 @@
 //   - Relevant syntax tree type:
 //     https://docs.rs/syn/2.0/syn/struct.Attribute.html
 
-use std::vec;
-
 use derive_builder::Builder;
 
-#[derive(Builder)]
+#[derive(Builder, Debug)]
+#[cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
 pub struct Command {
     executable: String,
     #[builder(each = "arg")]
@@ -42,16 +41,14 @@ pub struct Command {
     current_dir: Option<String>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = Command::builder()
-        .executable("cargo".to_owned())
-        .arg("build".to_owned())
-        .arg("--release".to_owned())
-        .build()
-        .unwrap();
+        .executable("bash".to_owned())
+        .arg("/c".to_owned())
+        .arg("whoami".to_owned())
+        .env("LANG=C".to_owned())
+        .build()?;
 
-    assert_eq!(command.executable, "cargo");
-    assert_eq!(command.args, vec!["build", "--release"]);
-    assert!(command.env.is_empty());
-    assert_eq!(command.current_dir, None);
+    println!("{:#?}", command);
+    Ok(())
 }
